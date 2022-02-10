@@ -2,7 +2,6 @@
 //! Takes 2 audio inputs and outputs them to 2 audio outputs.
 //! All JACK notifications are also printed out.
 use std::io;
-use std::process::Command;
 
 fn main() {
     // Create client
@@ -21,7 +20,7 @@ fn main() {
         .register_port("system_in_r", jack::AudioIn::default())
         .unwrap();
     let mut mikro_out = client
-        .register_port("mirko_out", jack::AudioOut::default())
+        .register_port("mikro_out", jack::AudioOut::default())
         .unwrap();
     let mut system_out_l = client
         .register_port("system_out_l", jack::AudioOut::default())
@@ -61,7 +60,7 @@ fn main() {
         .unwrap();
     active_client
         .as_client()
-        .connect_ports_by_name("1lt_jackmute:mirko_out", "ardour:RODE_Podcaster/audio_in 1")
+        .connect_ports_by_name("1lt_jackmute:mikro_out", "ardour:RODE_Podcaster/audio_in 1")
         .unwrap();
     
     //system_l
@@ -97,43 +96,27 @@ fn main() {
     println!("Press s to mute system channel");
     let mut mikro_connected = true;
     let mut system_connected = true;
+    let mut mikro_telefon_connected = false;
 
-    while(true) {
+    #[allow(while_true)]
+    while true {
         let mut user_input = String::new();
         io::stdin().read_line(&mut user_input).ok();
 
         //mikro
         if user_input.contains("m") {
-            if mikro_connected {
+            if mikro_connected && !mikro_telefon_connected {
                 active_client
                     .as_client()
                     .disconnect_ports_by_name("rode:capture_1", "1lt_jackmute:mikro_in")
                     .unwrap();
-                active_client
-                    .as_client()
-                    .disconnect_ports_by_name("1lt_jackmute:mirko_out", "ardour:RODE_Podcaster/audio_in 1")
-                    .unwrap();
                 mikro_connected = false;
-                
-                Command::new("g910-led")
-                    .arg("-k G2 bbbbff")
-                    .spawn()
-                    .expect("g910-led G2 could not be set");
             } else {
                 active_client
                     .as_client()
                     .connect_ports_by_name("rode:capture_1", "1lt_jackmute:mikro_in")
                     .unwrap();
-                active_client
-                    .as_client()
-                    .connect_ports_by_name("1lt_jackmute:mirko_out", "ardour:RODE_Podcaster/audio_in 1")
-                    .unwrap();
                 mikro_connected = true;
-                
-                Command::new("g910-led")
-                    .arg("-k G2 bbbbff")
-                    .spawn()
-                    .expect("g910-led G2 could not be set");
             }
         }
 
@@ -146,26 +129,10 @@ fn main() {
                     .as_client()
                     .disconnect_ports_by_name("ardour:OUT-System/audio_out 1", "1lt_jackmute:system_in_l")
                     .unwrap();
-                active_client
-                    .as_client()
-                    .disconnect_ports_by_name("1lt_jackmute:system_out_l", "ardour:System-Stream/audio_in 1")
-                    .unwrap();
-                active_client
-                    .as_client()
-                    .disconnect_ports_by_name("1lt_jackmute:system_out_l", "ardour:Master/audio_in 1")
-                    .unwrap();
                 //system_r
                 active_client
                     .as_client()
                     .disconnect_ports_by_name("ardour:OUT-System/audio_out 2", "1lt_jackmute:system_in_r")
-                    .unwrap();
-                active_client
-                    .as_client()
-                    .disconnect_ports_by_name("1lt_jackmute:system_out_r", "ardour:System-Stream/audio_in 2")
-                    .unwrap();
-                active_client
-                    .as_client()
-                    .disconnect_ports_by_name("1lt_jackmute:system_out_r", "ardour:Master/audio_in 2")
                     .unwrap();
                 system_connected = false;
             } else {
@@ -174,28 +141,39 @@ fn main() {
                     .as_client()
                     .connect_ports_by_name("ardour:OUT-System/audio_out 1", "1lt_jackmute:system_in_l")
                     .unwrap();
-                active_client
-                    .as_client()
-                    .connect_ports_by_name("1lt_jackmute:system_out_l", "ardour:System-Stream/audio_in 1")
-                    .unwrap();
-                active_client
-                    .as_client()
-                    .connect_ports_by_name("1lt_jackmute:system_out_l", "ardour:Master/audio_in 1")
-                    .unwrap();
                 //system_r
                 active_client
                     .as_client()
                     .connect_ports_by_name("ardour:OUT-System/audio_out 2", "1lt_jackmute:system_in_r")
                     .unwrap();
-                active_client
-                    .as_client()
-                    .connect_ports_by_name("1lt_jackmute:system_out_r", "ardour:System-Stream/audio_in 2")
-                    .unwrap();
-                active_client
-                    .as_client()
-                    .connect_ports_by_name("1lt_jackmute:system_out_r", "ardour:Master/audio_in 2")
-                    .unwrap();
                 system_connected = true;
+            }
+        }
+
+        //effect Telefon
+        if user_input.contains("t") {
+            if mikro_telefon_connected {
+                active_client
+                    .as_client()
+                    .disconnect_ports_by_name("1lt_jackmute:mikro_out", "ardour-01:Telefon/audio_in 1")
+                    .unwrap();
+                active_client
+                    .as_client()
+                    .connect_ports_by_name("1lt_jackmute:mikro_out", "ardour:RODE_Podcaster/audio_in 1")
+                    .unwrap();
+
+                mikro_telefon_connected = false;
+            } else {
+                active_client
+                    .as_client()
+                    .disconnect_ports_by_name("1lt_jackmute:mikro_out", "ardour:RODE_Podcaster/audio_in 1")
+                    .unwrap();
+                active_client
+                    .as_client()
+                    .connect_ports_by_name("1lt_jackmute:mikro_out", "ardour-01:Telefon/audio_in 1")
+                    .unwrap();
+
+                mikro_telefon_connected = true;
             }
         }
 
