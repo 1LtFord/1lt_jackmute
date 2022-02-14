@@ -20,7 +20,7 @@ jobs:
     - name: install jack
       run: |
         sudo apt-get update
-        sudo apt-get install jackd2
+        sudo apt-get install libjack-jackd2-0
     - name: Build
       run: cargo build --verbose
     - name: Run tests
