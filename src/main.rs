@@ -5,108 +5,24 @@ fn main() {
     let connections = get_connections();
     let mut muteable_connections = get_muteable_connections(&connections);
     let mut effect_connections = get_effect_connections(&connections);
-
     let mut error_messages = Vec::new();
-
-    // Create client
-    let (client, _status) =
-        jack::Client::new("1lt_jackmute", jack::ClientOptions::NO_START_SERVER).unwrap();
-
-     // Register ports. They will be used in a callback that will be
-    // called when new data is available.
-    let mikro_in = client
-        .register_port("mikro_in", jack::AudioIn::default())
-        .unwrap();
-    let system_in_l = client
-        .register_port("system_in_l", jack::AudioIn::default())
-        .unwrap();
-    let system_in_r = client
-        .register_port("system_in_r", jack::AudioIn::default())
-        .unwrap();
-    let mut mikro_out = client
-        .register_port("mikro_out", jack::AudioOut::default())
-        .unwrap();
-    let mut system_out_l = client
-        .register_port("system_out_l", jack::AudioOut::default())
-        .unwrap();
-    let mut system_out_r = client
-        .register_port("system_out_r", jack::AudioOut::default())
-        .unwrap();
-
-    let process_callback = move |_: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
-        //mikro
-        let mikro_out_p = mikro_out.as_mut_slice(ps);
-        let mikro_in_p = mikro_in.as_slice(ps);
-        mikro_out_p.clone_from_slice(mikro_in_p);
-
-        //system_l
-        let system_out_p_l = system_out_l.as_mut_slice(ps);
-        let system_in_p_l = system_in_l.as_slice(ps);
-        system_out_p_l.clone_from_slice(system_in_p_l);
-
-        //system_r
-        let system_out_p_r = system_out_r.as_mut_slice(ps);
-        let system_in_p_r = system_in_r.as_slice(ps);
-        system_out_p_r.clone_from_slice(system_in_p_r);
+    
+    //init and get jack client
+    let active_client = get_jack_client();
 
 
-        jack::Control::Continue
-    };
-    let process = jack::ClosureProcessHandler::new(process_callback);
+    //connect all connections which should be connected on startup
+    error_messages.append(&mut init_connections(&connections, active_client.as_client()));
 
-    // Activate the client, which starts the processing.
-    let active_client = client.activate_async(Notifications, process).unwrap();
-
-    for connection in connections {
-        if connection.connected == true {
-            match active_client
-            .as_client()
-            .connect_ports_by_name(&connection.port_connections.audio_in, &connection.port_connections.audio_out) {
-                Ok(()) => (),
-                Err(_err) => error_messages.push(format!("could not connect {}", &connection.name))
-            }
-        }
-    }
-
+    let mut run = true;
     #[allow(while_true)]
-    while true {
+    while run {
 
-        //print status
-        if muteable_connections.len() > 0 {
-            for i in 0..muteable_connections.len() {
-                println!("{}: {}", muteable_connections[i].connection.name, 
-                    if muteable_connections[i].connection.connected 
-                    {"unmuted"} 
-                    else 
-                    {"muted"}
-                );
-            }
-        }
-        
-        if effect_connections.connections.len() > 0 {
-            if muteable_connections.len() > 0 {
-                println!("");
-            }
-            for i in 0..effect_connections.connections.len() {
+        //Print connection status and error messages
+        print_status(&muteable_connections, &effect_connections, &error_messages);
+        error_messages.clear();
 
-                println!("{}: {}", effect_connections.connections[i].connection.name, 
-                    if effect_connections.connections[i].connection.connected 
-                    {"active"} 
-                    else 
-                    {"inactive"}
-                );
-            }
-        }
-        
-        if error_messages.len() > 0 {
-            println!("\n errors:");
-            for error in &error_messages {
-                println!("{}", error);
-            }
-            error_messages.clear();
-        }
-
-
+        //wait for user input
         let mut user_input = String::new();
         io::stdin().read_line(&mut user_input).ok();
 
@@ -114,8 +30,16 @@ fn main() {
         print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
         
         if user_input.len() == 2 {
-            for i in 0..muteable_connections.len() {
+            
+            //exit program
+            if user_input.contains('e') {
+                run = false;
+            }
 
+            //active_client.as_client() testen für zugriff auf ports
+
+            //toggle muteable connections (mute-unmute)
+            for i in 0..muteable_connections.len() {
                 if user_input.contains(muteable_connections[i].shortcut) {
                     if muteable_connections[i].connection.connected {
                         match active_client
@@ -199,7 +123,111 @@ fn main() {
     }
     
 
-    //active_client.deactivate().unwrap();
+    active_client.deactivate().unwrap();
+}
+
+fn get_jack_client() -> jack::AsyncClient<Notifications, jack::ClosureProcessHandler<impl FnMut(&jack::Client, &jack::ProcessScope)-> jack::Control>> {
+    //Create Client
+    let (client, _status) = jack::Client::new("1lt_jackmute", jack::ClientOptions::NO_START_SERVER).unwrap();
+    let process = jack::ClosureProcessHandler::new(get_jack_process_callback(&client));
+
+    // Activate the client, which starts the processing.
+    client.activate_async(Notifications, process).unwrap()
+}
+
+
+fn get_jack_process_callback(client: &jack::Client) -> impl FnMut(&jack::Client, &jack::ProcessScope) -> jack::Control {
+     // Register ports. They will be used in a callback that will be
+    // called when new data is available.
+    let mikro_in = client
+        .register_port("mikro_in", jack::AudioIn::default())
+        .unwrap();
+    let system_in_l = client
+        .register_port("system_in_l", jack::AudioIn::default())
+        .unwrap();
+    let system_in_r = client
+        .register_port("system_in_r", jack::AudioIn::default())
+        .unwrap();
+    let mut mikro_out = client
+        .register_port("mikro_out", jack::AudioOut::default())
+        .unwrap();
+    let mut system_out_l = client
+        .register_port("system_out_l", jack::AudioOut::default())
+        .unwrap();
+    let mut system_out_r = client
+        .register_port("system_out_r", jack::AudioOut::default())
+        .unwrap();
+
+    move |_: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
+        //mikro
+        let mikro_out_p = mikro_out.as_mut_slice(ps);
+        let mikro_in_p = mikro_in.as_slice(ps);
+        mikro_out_p.clone_from_slice(mikro_in_p);
+
+        //system_l
+        let system_out_p_l = system_out_l.as_mut_slice(ps);
+        let system_in_p_l = system_in_l.as_slice(ps);
+        system_out_p_l.clone_from_slice(system_in_p_l);
+
+        //system_r
+        let system_out_p_r = system_out_r.as_mut_slice(ps);
+        let system_in_p_r = system_in_r.as_slice(ps);
+        system_out_p_r.clone_from_slice(system_in_p_r);
+
+
+        jack::Control::Continue
+    }
+}
+
+fn init_connections(connections: &Vec<Connection>, active_client: &jack::Client) -> Vec<String> {
+    let mut error_messages = Vec::new();
+    for connection in connections {
+        if connection.connected == true {
+            match active_client
+            .connect_ports_by_name(&connection.port_connections.audio_in, &connection.port_connections.audio_out) {
+                Ok(()) => (),
+                Err(_err) => error_messages.push(format!("could not connect {}", &connection.name))
+            }
+        }
+    }
+    error_messages
+}
+
+
+fn print_status(muteable_connections: &Vec<ChangeableConnection>, effect_connections: &ConnectionSwitch, error_messages: &Vec<String>) {
+    //print status
+    if muteable_connections.len() > 0 {
+        for i in 0..muteable_connections.len() {
+            println!("{}: {}", muteable_connections[i].connection.name, 
+                if muteable_connections[i].connection.connected 
+                {"unmuted"} 
+                else 
+                {"muted"}
+            );
+        }
+    }
+    
+    if effect_connections.connections.len() > 0 {
+        if muteable_connections.len() > 0 {
+            println!("");
+        }
+        for i in 0..effect_connections.connections.len() {
+
+            println!("{}: {}", effect_connections.connections[i].connection.name, 
+                if effect_connections.connections[i].connection.connected 
+                {"active"} 
+                else 
+                {"inactive"}
+            );
+        }
+    }
+    
+    if error_messages.len() > 0 {
+        println!("\n errors:");
+        for error in error_messages {
+            println!("{}", error);
+        }
+    }
 }
 
 
