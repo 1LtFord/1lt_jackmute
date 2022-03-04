@@ -1,25 +1,42 @@
+mod connections;
+mod config;
+
+use std::env;
 use std::io;
+use crate::config::config::Config;
+use crate::connections::{
+    port_connection::PortConnection, 
+    connection::Connection, 
+    changeable_connection::ChangeableConnection, 
+    connection_switch::ConnectionSwitch
+};
+use crate::connections::port::{
+    PortIn,
+    PortOut
+};
 
 fn main() {
+    //get config
+    let config = Config::new(get_config_file_path());
 
-    let connections = get_connections();
+    let mut connections = get_connections();
     let mut muteable_connections = get_muteable_connections(&connections);
     let mut effect_connections = get_effect_connections(&connections);
     let mut error_messages = Vec::new();
     
     //init and get jack client
-    let active_client = get_jack_client();
-
+    let active_client = get_jack_client(&config);
 
     //connect all connections which should be connected on startup
-    error_messages.append(&mut init_connections(&connections, active_client.as_client()));
+    error_messages.append(&mut init_connections(&mut connections, active_client.as_client()));
+
 
     let mut run = true;
     #[allow(while_true)]
     while run {
 
         //Print connection status and error messages
-        print_status(&muteable_connections, &effect_connections, &error_messages);
+        print_status(active_client.as_client(), &muteable_connections, &effect_connections, &error_messages);
         error_messages.clear();
 
         //wait for user input
@@ -36,88 +53,16 @@ fn main() {
                 run = false;
             }
 
-            //active_client.as_client() testen für zugriff auf ports
-
             //toggle muteable connections (mute-unmute)
-            for i in 0..muteable_connections.len() {
-                if user_input.contains(muteable_connections[i].shortcut) {
-                    if muteable_connections[i].connection.connected {
-                        match active_client
-                        .as_client()
-                        .disconnect_ports_by_name(&muteable_connections[i].connection.port_connections.audio_in, &muteable_connections[i].connection.port_connections.audio_out) {
-                            Ok(()) => (),
-                            Err(_err) => error_messages.push(format!("could not disconnect {}", &muteable_connections[i].connection.name))
-                        }
-                        muteable_connections[i].connection.connected = false;
-                    } else {
-                        match active_client
-                        .as_client()
-                        .connect_ports_by_name(&muteable_connections[i].connection.port_connections.audio_in, &muteable_connections[i].connection.port_connections.audio_out) {
-                            Ok(()) => (),
-                            Err(_err) => error_messages.push(format!("could not connect {}", &muteable_connections[i].connection.name))
-                        }
-                        muteable_connections[i].connection.connected = true;
-                    }
-                }
+            match &mut ChangeableConnection::toggle(&mut muteable_connections, &user_input, active_client.as_client()) {
+                Ok(()) => (),
+                Err(err) => error_messages.append(err)
             }
-    
-            for i in 0..effect_connections.connections.len() {
-                if user_input.contains(effect_connections.connections[i].shortcut) {
-                    //disconnect if connected
-                    if effect_connections.connections[i].connection.connected {
-                        match active_client
-                        .as_client()
-                        .disconnect_ports_by_name(&effect_connections.connections[i].connection.port_connections.audio_in, &effect_connections.connections[i].connection.port_connections.audio_out) {
-                            Ok(()) => (),
-                            Err(_err) => error_messages.push(format!("could not disconnect {}", &effect_connections.connections[i].connection.name))
-                        }
-                        effect_connections.connections[i].connection.connected = false;
-                        //connect standard
-                        if !effect_connections.standard.connected {
-                            match active_client
-                            .as_client()
-                            .connect_ports_by_name(&effect_connections.standard.port_connections.audio_in, &effect_connections.standard.port_connections.audio_out) {
-                                Ok(()) => (),
-                                Err(_err) => error_messages.push(format!("could not connect {}", &effect_connections.standard.name))
-                            }
-                            effect_connections.standard.connected = true;
-                        }
-                    //Connect if disconnected
-                    } else {
-                        for f in 0..effect_connections.connections.len() {
-                            if !user_input.contains(effect_connections.connections[f].shortcut) {
-                                //disconnect other connected effects
-                                if effect_connections.connections[f].connection.connected {
-                                    match active_client
-                                    .as_client()
-                                    .disconnect_ports_by_name(&effect_connections.connections[f].connection.port_connections.audio_in, &effect_connections.connections[f].connection.port_connections.audio_out) {
-                                        Ok(()) => (),
-                                        Err(_err) => error_messages.push(format!("could not disconnect {}", &effect_connections.connections[f].connection.name))
-                                    }
-                                    effect_connections.connections[f].connection.connected = false;
-                                }
-                            }
-                        }
-                        //disconnect standard
-                        if effect_connections.standard.connected {
-                            match active_client
-                            .as_client()
-                            .disconnect_ports_by_name(&effect_connections.standard.port_connections.audio_in, &effect_connections.standard.port_connections.audio_out) {
-                                Ok(()) => (),
-                                Err(_err) => error_messages.push(format!("could not disconnect {}", &effect_connections.standard.name))
-                            }
-                            effect_connections.standard.connected = false;
-                        }
-
-                        match active_client
-                        .as_client()
-                        .connect_ports_by_name(&effect_connections.connections[i].connection.port_connections.audio_in, &effect_connections.connections[i].connection.port_connections.audio_out) {
-                            Ok(()) => (),
-                            Err(_err) => error_messages.push(format!("could not connect {}", &effect_connections.connections[i].connection.name))
-                        }
-                        effect_connections.connections[i].connection.connected = true;
-                    }
-                }
+            
+            //switch switchable connections
+            match &mut effect_connections.switch(active_client.as_client(), &user_input) {
+                Ok(()) => (),
+                Err(err) => error_messages.append(err)
             }
         }
     }
@@ -126,80 +71,57 @@ fn main() {
     active_client.deactivate().unwrap();
 }
 
-fn get_jack_client() -> jack::AsyncClient<Notifications, jack::ClosureProcessHandler<impl FnMut(&jack::Client, &jack::ProcessScope)-> jack::Control>> {
+fn get_jack_client(config: &Config) -> jack::AsyncClient<Notifications, jack::ClosureProcessHandler<impl FnMut(&jack::Client, &jack::ProcessScope)-> jack::Control>> {
     //Create Client
     let (client, _status) = jack::Client::new("1lt_jackmute", jack::ClientOptions::NO_START_SERVER).unwrap();
-    let process = jack::ClosureProcessHandler::new(get_jack_process_callback(&client));
+    let process = jack::ClosureProcessHandler::new(get_jack_process_callback(&client, config));
 
     // Activate the client, which starts the processing.
     client.activate_async(Notifications, process).unwrap()
 }
 
 
-fn get_jack_process_callback(client: &jack::Client) -> impl FnMut(&jack::Client, &jack::ProcessScope) -> jack::Control {
-     // Register ports. They will be used in a callback that will be
-    // called when new data is available.
-    let mikro_in = client
-        .register_port("mikro_in", jack::AudioIn::default())
-        .unwrap();
-    let system_in_l = client
-        .register_port("system_in_l", jack::AudioIn::default())
-        .unwrap();
-    let system_in_r = client
-        .register_port("system_in_r", jack::AudioIn::default())
-        .unwrap();
-    let mut mikro_out = client
-        .register_port("mikro_out", jack::AudioOut::default())
-        .unwrap();
-    let mut system_out_l = client
-        .register_port("system_out_l", jack::AudioOut::default())
-        .unwrap();
-    let mut system_out_r = client
-        .register_port("system_out_r", jack::AudioOut::default())
-        .unwrap();
-
+fn get_jack_process_callback(client: &jack::Client, config: &Config) -> impl FnMut(&jack::Client, &jack::ProcessScope) -> jack::Control {
+    //register Ports on client
+    let ports_in = PortIn::get_ports_in(client, config.get_ports());
+    let mut ports_out = PortOut::get_ports_out(client, config.get_ports());
+    
+    //define process callback
     move |_: &jack::Client, ps: &jack::ProcessScope| -> jack::Control {
-        //mikro
-        let mikro_out_p = mikro_out.as_mut_slice(ps);
-        let mikro_in_p = mikro_in.as_slice(ps);
-        mikro_out_p.clone_from_slice(mikro_in_p);
+        if ports_in.len() != ports_out.len() {
+            return jack::Control::Quit
+        }
 
-        //system_l
-        let system_out_p_l = system_out_l.as_mut_slice(ps);
-        let system_in_p_l = system_in_l.as_slice(ps);
-        system_out_p_l.clone_from_slice(system_in_p_l);
-
-        //system_r
-        let system_out_p_r = system_out_r.as_mut_slice(ps);
-        let system_in_p_r = system_in_r.as_slice(ps);
-        system_out_p_r.clone_from_slice(system_in_p_r);
-
-
+        //copy audio data from in ports to out ports
+        for i in 0..ports_in.len() {
+            let port_out = ports_out[i].out_port.as_mut_slice(ps);
+            let port_in = ports_in[i].in_port.as_slice(ps);
+            port_out.clone_from_slice(port_in);
+        }
         jack::Control::Continue
     }
 }
 
-fn init_connections(connections: &Vec<Connection>, active_client: &jack::Client) -> Vec<String> {
+
+fn init_connections(connections: &mut Vec<Connection>, active_client: &jack::Client) -> Vec<String> {
     let mut error_messages = Vec::new();
-    for connection in connections {
-        if connection.connected == true {
-            match active_client
-            .connect_ports_by_name(&connection.port_connections.audio_in, &connection.port_connections.audio_out) {
-                Ok(()) => (),
-                Err(_err) => error_messages.push(format!("could not connect {}", &connection.name))
-            }
+    for i in 0..connections.len() {
+        match connections[i].init(active_client) {
+            Ok(()) => (),
+            Err(err) => error_messages.push(err)
         }
     }
     error_messages
 }
 
 
-fn print_status(muteable_connections: &Vec<ChangeableConnection>, effect_connections: &ConnectionSwitch, error_messages: &Vec<String>) {
+fn print_status(client: &jack::Client, muteable_connections: &Vec<ChangeableConnection>, effect_connections: &ConnectionSwitch, error_messages: &Vec<String>) {
     //print status
+    //status muteable connections
     if muteable_connections.len() > 0 {
         for i in 0..muteable_connections.len() {
             println!("{}: {}", muteable_connections[i].connection.name, 
-                if muteable_connections[i].connection.connected 
+                if muteable_connections[i].connection.connected(client)
                 {"unmuted"} 
                 else 
                 {"muted"}
@@ -207,6 +129,7 @@ fn print_status(muteable_connections: &Vec<ChangeableConnection>, effect_connect
         }
     }
     
+    //status switchable connections
     if effect_connections.connections.len() > 0 {
         if muteable_connections.len() > 0 {
             println!("");
@@ -214,7 +137,7 @@ fn print_status(muteable_connections: &Vec<ChangeableConnection>, effect_connect
         for i in 0..effect_connections.connections.len() {
 
             println!("{}: {}", effect_connections.connections[i].connection.name, 
-                if effect_connections.connections[i].connection.connected 
+                if effect_connections.connections[i].connection.connected(client)
                 {"active"} 
                 else 
                 {"inactive"}
@@ -222,6 +145,7 @@ fn print_status(muteable_connections: &Vec<ChangeableConnection>, effect_connect
         }
     }
     
+    //print error messages
     if error_messages.len() > 0 {
         println!("\n errors:");
         for error in error_messages {
@@ -229,6 +153,7 @@ fn print_status(muteable_connections: &Vec<ChangeableConnection>, effect_connect
         }
     }
 }
+
 
 
 fn get_connections() -> Vec<Connection> {
@@ -317,61 +242,13 @@ fn get_effect_connections(connections: &Vec<Connection>) -> ConnectionSwitch {
     }
 }
 
-
-
-#[derive(Clone)]
-struct PortConnection {
-    audio_out: String,
-    audio_in: String
-}
-impl PortConnection {
-    fn new(paudio_in: &str, paudio_out: &str) -> PortConnection {
-        PortConnection{
-            audio_in: String::from(paudio_in),
-            audio_out: String::from(paudio_out)
-        }
-    }
-}
-
-#[derive(Clone)]
-struct Connection {
-    name: String,
-    connected: bool,
-    port_connections: PortConnection
-}
-impl Connection {
-    fn new(pname: &str, pconnected: bool, pport_connections: PortConnection) -> Connection {
-        Connection{
-            name: String::from(pname),
-            connected: pconnected,
-            port_connections: pport_connections
-        }
-    }
-
-    fn find_connection_by_name(name: &str, connections: &Vec<Connection>) -> Connection {
-        let mut iter = connections.iter();
-        iter.find(|&x| x.name == name).unwrap().clone()
-    }
-}
-
-#[derive(Clone)]
-struct ChangeableConnection {
-    shortcut: char,
-    connection: Connection
-}
-impl ChangeableConnection {
-    fn new(pshortcut: char, pconnection: Connection) -> ChangeableConnection{
-        ChangeableConnection {
-            shortcut: pshortcut,
-            connection: pconnection
-        }
-    }
-}
-
-#[derive(Clone)]
-struct ConnectionSwitch {
-    standard: Connection,
-    connections: Vec<ChangeableConnection>
+///get config file location
+fn get_config_file_path() -> String {
+    let home_path = match env::var("HOME") {
+        Ok(home_path) => home_path,
+        Err(error) => panic!("No home directory set. Can't find config file path: {:?}", error),
+    };
+    format!("{}/.local/share/1lt_software/1lt_jackmute/{}", home_path, "config")
 }
 
 

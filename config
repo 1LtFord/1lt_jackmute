@@ -1,0 +1,110 @@
+
+[ports1]
+in = mikro_in
+out = mikro_out
+
+[ports2]
+in = system_in_l
+out = system_out_l
+
+[ports3]
+in = system_in_r
+out = system_out_r
+
+
+[connections1]
+name = mikrofon -> 1lt_jackmute
+connect_init = false
+port_out = rode:capture_1
+port_in = 1lt_jackmute:mikro_in
+
+[connections2]
+name = jackmute_mikrofon -> ardour_standard
+connect_init = true
+port_out = 1lt_jackmute:mikro_out
+port_in = ardour:RODE_Podcaster/audio_in 1
+
+[connections3]
+name = ardour_system_L -> 1lt_jackmute
+connect_init = true
+port_out = ardour:OUT-System/audio_out 1
+port_in = 1lt_jackmute:system_in_l
+
+[connections4]
+name = jackmute_system_L -> ardour_stream
+connect_init = true
+port_out = 1lt_jackmute:system_out_l
+port_in = ardour:System-Stream/audio_in 1
+
+[connections5]
+name = jackmute_system_L -> ardour_master
+connect_init = true
+port_out = 1lt_jackmute:system_out_l
+port_in = ardour:Master/audio_in 1
+
+[connections6]
+name = ardour_system_R -> 1lt_jackmute
+connect_init = true
+port_out = ardour:OUT-System/audio_out 2
+port_in = 1lt_jackmute:system_in_r
+
+[connections7]
+name = jackmute_system_R -> ardour_stream
+connect_init = true
+port_out = 1lt_jackmute:system_out_r
+port_in = ardour:System-Stream/audio_in 2
+
+[connections8]
+name = jackmute_system_R -> ardour_master
+connect_init = true
+port_out = 1lt_jackmute:system_out_r
+port_in = ardour:Master/audio_in 2
+
+[connections9]
+name = 1lt_jackmute -> ardour_effect1
+connect_init = false
+port_out = 1lt_jackmute:mikro_out
+port_in = ardour-01:1/audio_in 1
+
+[connections10]
+name = 1lt_jackmute -> ardour_effect2
+connect_init = false
+port_out = 1lt_jackmute:mikro_out
+port_in = ardour-01:2/audio_in 1
+
+[connections11]
+name = 1lt_jackmute -> ardour_effect3
+connect_init = false
+port_out = 1lt_jackmute:mikro_out
+port_in = ardour-01:3/audio_in 1
+
+[connections12]
+name = 1lt_jackmute -> ardour_effect4
+connect_init = false
+port_out = 1lt_jackmute:mikro_out
+port_in = ardour-01:4/audio_in 1
+
+
+[muteable_connection1]
+connection = mikrofon -> 1lt_jackmute
+shortcut = m
+
+[muteable_connection2]
+connection = ardour_system_L -> 1lt_jackmute
+shortcut = s
+
+[muteable_connection3]
+connection = ardour_system_R -> 1lt_jackmute
+shortcut = s
+
+
+[switchable_connection1]
+default = jackmute_mikrofon -> ardour_standard
+connection1 = 1lt_jackmute -> ardour_effect1
+shortcut1 = 1
+connection2 = 1lt_jackmute -> ardour_effect2
+shortcut2 = 2
+connection3 = 1lt_jackmute -> ardour_effect3
+shortcut3 = 3
+connection4 = 1lt_jackmute -> ardour_effect4
+shortcut4 = 4
