@@ -17,11 +17,11 @@ use crate::connections::port::{
 
 fn main() {
     //get config
-    let config = Config::new(get_config_file_path());
+    let config = Config::new("1lt_jackmute", "v0.2.0", get_config_file_path());
 
-    let mut connections = get_connections();
-    let mut muteable_connections = get_muteable_connections(&connections);
-    let mut effect_connections = get_effect_connections(&connections);
+    let mut connections = get_connections(&config);
+    let mut muteable_connections = get_muteable_connections(&config, &connections);
+    let mut switchable_connections = get_switchable_connections(&config, &connections);
     let mut error_messages = Vec::new();
     
     //init and get jack client
@@ -36,7 +36,7 @@ fn main() {
     while run {
 
         //Print connection status and error messages
-        print_status(active_client.as_client(), &muteable_connections, &effect_connections, &error_messages);
+        print_status(config.program_name(), config.program_version(), active_client.as_client(), &muteable_connections, &switchable_connections, &error_messages);
         error_messages.clear();
 
         //wait for user input
@@ -60,7 +60,7 @@ fn main() {
             }
             
             //switch switchable connections
-            match &mut effect_connections.switch(active_client.as_client(), &user_input) {
+            match &mut ConnectionSwitch::switch(&mut switchable_connections, active_client.as_client(), &user_input) {
                 Ok(()) => (),
                 Err(err) => error_messages.append(err)
             }
@@ -115,10 +115,13 @@ fn init_connections(connections: &mut Vec<Connection>, active_client: &jack::Cli
 }
 
 
-fn print_status(client: &jack::Client, muteable_connections: &Vec<ChangeableConnection>, effect_connections: &ConnectionSwitch, error_messages: &Vec<String>) {
+fn print_status(program_name: String, program_version: String, client: &jack::Client, muteable_connections: &Vec<ChangeableConnection>, switchable_connections: &Vec<ConnectionSwitch>, error_messages: &Vec<String>) {
     //print status
     //status muteable connections
+    println!("{} {}\n", program_name, program_version);
+
     if muteable_connections.len() > 0 {
+        println!("Muteable:");
         for i in 0..muteable_connections.len() {
             println!("{}: {}", muteable_connections[i].connection.name, 
                 if muteable_connections[i].connection.connected(client)
@@ -127,23 +130,28 @@ fn print_status(client: &jack::Client, muteable_connections: &Vec<ChangeableConn
                 {"muted"}
             );
         }
+        println!("");
     }
     
     //status switchable connections
-    if effect_connections.connections.len() > 0 {
-        if muteable_connections.len() > 0 {
+    for switchable_connection in switchable_connections {
+        println!("Switchable:");
+        if switchable_connection.connections.len() > 0 {
+            if muteable_connections.len() > 0 {
+            }
+            for i in 0..switchable_connection.connections.len() {
+    
+                println!("{}: {}", switchable_connection.connections[i].connection.name, 
+                    if switchable_connection.connections[i].connection.connected(client)
+                    {"active"} 
+                    else 
+                    {"inactive"}
+                );
+            }
             println!("");
         }
-        for i in 0..effect_connections.connections.len() {
-
-            println!("{}: {}", effect_connections.connections[i].connection.name, 
-                if effect_connections.connections[i].connection.connected(client)
-                {"active"} 
-                else 
-                {"inactive"}
-            );
-        }
     }
+    
     
     //print error messages
     if error_messages.len() > 0 {
@@ -156,90 +164,74 @@ fn print_status(client: &jack::Client, muteable_connections: &Vec<ChangeableConn
 
 
 
-fn get_connections() -> Vec<Connection> {
+fn get_connections(config: &Config) -> Vec<Connection> {
     let mut connections = Vec::new();
+    let connections_def = config.get_connections();
 
-    //Mikrofon
-    connections.push(Connection::new("mikrofon -> 1lt_jackmute", 
-                                        false, 
-                                        PortConnection::new("rode:capture_1", "1lt_jackmute:mikro_in")
-                                    ));
-    connections.push(Connection::new("jackmute_mikrofon -> ardour_standard", 
-                                        true, 
-                                        PortConnection::new("1lt_jackmute:mikro_out", "ardour:RODE_Podcaster/audio_in 1")
-                                    ));
-
-    //System_L
-    connections.push(Connection::new("ardour_system_L -> 1lt_jackmute", 
-                                        true, 
-                                        PortConnection::new("ardour:OUT-System/audio_out 1", "1lt_jackmute:system_in_l")
-                                    ));
-    connections.push(Connection::new("jackmute_system_L -> ardour_stream", 
-                                        true, 
-                                        PortConnection::new("1lt_jackmute:system_out_l", "ardour:System-Stream/audio_in 1")
-                                    ));
-    connections.push(Connection::new("jackmute_system_L -> ardour_master", 
-                                        true, 
-                                        PortConnection::new("1lt_jackmute:system_out_l", "ardour:Master/audio_in 1")
-                                    ));
-
-    //System_R
-    connections.push(Connection::new("ardour_system_R -> 1lt_jackmute", 
-                                        true, 
-                                        PortConnection::new("ardour:OUT-System/audio_out 2", "1lt_jackmute:system_in_r")
-                                    ));
-    connections.push(Connection::new("jackmute_system_R -> ardour_stream", 
-                                        true, 
-                                        PortConnection::new("1lt_jackmute:system_out_r", "ardour:System-Stream/audio_in 2")
-                                    ));
-    connections.push(Connection::new("jackmute_system_R -> ardour_master", 
-                                        true, 
-                                        PortConnection::new("1lt_jackmute:system_out_r", "ardour:Master/audio_in 2")
-                                    ));
-    
-    //Effects
-    connections.push(Connection::new("1lt_jackmute -> ardour_effect1", 
-                                        false, 
-                                        PortConnection::new("1lt_jackmute:mikro_out", "ardour-01:1/audio_in 1")
-                                    ));
-    connections.push(Connection::new("1lt_jackmute -> ardour_effect2", 
-                                        false, 
-                                        PortConnection::new("1lt_jackmute:mikro_out", "ardour-01:2/audio_in 1")
-                                    ));
-    connections.push(Connection::new("1lt_jackmute -> ardour_effect3", 
-                                        false, 
-                                        PortConnection::new("1lt_jackmute:mikro_out", "ardour-01:3/audio_in 1")
-                                    ));
-    connections.push(Connection::new("1lt_jackmute -> ardour_effect4", 
-                                        false, 
-                                        PortConnection::new("1lt_jackmute:mikro_out", "ardour-01:4/audio_in 1")
-                                    ));
+    for connection_def in connections_def {
+        connections.push(
+            Connection::new(
+                &connection_def.name,
+                connection_def.connect_init,
+                PortConnection::new(
+                    &connection_def.port_in, 
+                    &connection_def.port_out
+                )
+            )
+        )
+    }
 
     connections
 }
 
-fn get_muteable_connections(connections: &Vec<Connection>) -> Vec<ChangeableConnection> {
+fn get_muteable_connections(config: &Config, connections: &Vec<Connection>) -> Vec<ChangeableConnection> {
     let mut muteable_connections = Vec::new();
-    
-    muteable_connections.push(ChangeableConnection::new('m', Connection::find_connection_by_name("mikrofon -> 1lt_jackmute", connections)));
-    muteable_connections.push(ChangeableConnection::new('s', Connection::find_connection_by_name("ardour_system_L -> 1lt_jackmute", connections)));
-    muteable_connections.push(ChangeableConnection::new('s', Connection::find_connection_by_name("ardour_system_R -> 1lt_jackmute", connections)));
+    let mcs_def = config.get_muteable_connections();
+
+    for mc_def in mcs_def {
+        muteable_connections.push(
+            ChangeableConnection::new(
+                mc_def.shortcut,
+                Connection::find_connection_by_name(
+                    &mc_def.connection, 
+                    connections
+                )
+            )
+        );
+    }
 
     muteable_connections
 }
 
-fn get_effect_connections(connections: &Vec<Connection>) -> ConnectionSwitch {
-    let mut muteable_connections = Vec::new();
+fn get_switchable_connections(config: &Config, connections: &Vec<Connection>) -> Vec<ConnectionSwitch> {
+    let mut switchable_connections = Vec::new();
+    let scs_def = config.get_switchable_connections();
 
-    muteable_connections.push(ChangeableConnection::new('1', Connection::find_connection_by_name("1lt_jackmute -> ardour_effect1", connections)));
-    muteable_connections.push(ChangeableConnection::new('2', Connection::find_connection_by_name("1lt_jackmute -> ardour_effect2", connections)));
-    muteable_connections.push(ChangeableConnection::new('3', Connection::find_connection_by_name("1lt_jackmute -> ardour_effect3", connections)));
-    muteable_connections.push(ChangeableConnection::new('4', Connection::find_connection_by_name("1lt_jackmute -> ardour_effect4", connections)));
+    for sc_def in scs_def {
+        let mut muteable_connections = Vec::new();
+        let mcs_def = sc_def.connections;
 
-    ConnectionSwitch{
-        standard: Connection::find_connection_by_name("jackmute_mikrofon -> ardour_standard", connections),
-        connections: muteable_connections
+        for mc_def in mcs_def {
+            muteable_connections.push(
+                ChangeableConnection::new(
+                    mc_def.shortcut,
+                    Connection::find_connection_by_name(
+                        &mc_def.connection, 
+                        connections
+                    )
+                )
+            );
+        }
+        
+        switchable_connections.push(
+            ConnectionSwitch{
+                standard: Connection::find_connection_by_name(&sc_def.default, connections),
+                connections: muteable_connections
+            }
+        )
     }
+
+    switchable_connections
 }
 
 ///get config file location

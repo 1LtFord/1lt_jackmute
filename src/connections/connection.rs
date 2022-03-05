@@ -17,11 +17,11 @@ impl Connection {
 
     //returns if ports of connection are connected
     pub fn connected(&self, client: &jack::Client) -> bool {
-        let port = match client.port_by_name(&self.port_connections.audio_in) {
+        let port = match client.port_by_name(&self.port_connections.audio_out) {
             Some(port) => port,
             None => return false
         };
-        match port.is_connected_to(&self.port_connections.audio_out) {
+        match port.is_connected_to(&self.port_connections.audio_in) {
             Ok(connected) => connected,
             Err(_err) => false
         }
@@ -29,22 +29,21 @@ impl Connection {
 
     pub fn connect(&mut self, client: &jack::Client) -> Result<(), String> {
         if !self.connected(client) {
-            match client.connect_ports_by_name(&self.port_connections.audio_in, &self.port_connections.audio_out) {
+            match client.connect_ports_by_name(&self.port_connections.audio_out, &self.port_connections.audio_in) {
                 Ok(()) => {
                     return Ok(());
                 }
-                Err(_err) => return Err(format!("could not connect {}", &self.name))
+                Err(_err) => return Err(format!("could not connect {} | in {} out {}", &self.name, &self.port_connections.audio_in, &self.port_connections.audio_out))
             }
         }
         else {
             Err(format!("already connected {}", &self.name))
         }
-        
     }
 
     pub fn disconnect(&mut self, client: &jack::Client) -> Result<(), String> {
         if self.connected(client) {
-            match client.disconnect_ports_by_name(&self.port_connections.audio_in, &self.port_connections.audio_out) {
+            match client.disconnect_ports_by_name(&self.port_connections.audio_out, &self.port_connections.audio_in) {
                 Ok(()) => {
                     return Ok(());
                 }
