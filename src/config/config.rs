@@ -23,6 +23,12 @@ pub struct Config{
 impl Config {
     ///read and parse config file
     pub fn new(program_name: &str, program_version: &str, file_path: String) -> Config {
+        //create configfile if not exists
+        if !std::path::Path::new(&file_path).exists() {
+            Config::create_config_file(&file_path);
+        }
+
+        //read config
         let config = Config {
             program_name: String::from(program_name),
             program_version: String::from(program_version),
@@ -32,6 +38,18 @@ impl Config {
             }
         };
         config
+    }
+
+    fn create_config_file(file_path: &String) {
+        let path = std::path::Path::new(&file_path);
+        let folder = path.parent().unwrap();
+        match std::fs::create_dir_all(folder) {
+            Ok(()) => match std::fs::File::create(&file_path) {
+                Ok(_file) => (),
+                Err(error) => panic!("create config file error: {}", error)
+            },
+            Err(error) => panic!("create config file directory error: {}", error)
+        }
     }
 
     pub fn program_name(&self) -> String {
