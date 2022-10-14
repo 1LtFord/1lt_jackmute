@@ -1,8 +1,8 @@
 [![Build](https://github.com/1LtFord/1lt_jackmute/actions/workflows/build.yml/badge.svg)](https://github.com/1LtFord/1lt_jackmute/actions/workflows/build.yml)
 # 1lt_jackmute
-1Lt_Jackmute is a JACK client which enables you to toggle and switch JACK connections via shortcuts
-I developed this application for my live streaming audio setup, to be able to mute my microphone and system audio via my keyboard whenever i need and to redirect my microphone to different ports for preset voice manipulation.
-
+1Lt_Jackmute is a JACK client which enables you to toggle and switch JACK connections via shortcuts.  
+I developed this application for my live streaming audio setup, to be able to mute my microphone and system audio via my keyboard whenever i need and to redirect my microphone to different ports for preset voice manipulation.  
+  
 ## How to build this software
 1. Download the source code
 2. Install **rustup** via your distributions package manager or find instructions [here](https://www.rust-lang.org/tools/install)
