@@ -6,18 +6,18 @@ use config_1lt::file::{
     read::read_config_file,
 };
 
-pub struct Config{
-    program_name: String,
-    program_version: String,
-    file: ConfigFile
-}
-
 pub trait New {
     fn new(cfg_group: ConfigGroup) -> Self;
 
     fn error_text_start() -> String {
         format!("Error while parsing ports from config file:") 
     }
+}
+
+pub struct Config{
+    program_name: String,
+    program_version: String,
+    file: ConfigFile
 }
 
 impl Config {

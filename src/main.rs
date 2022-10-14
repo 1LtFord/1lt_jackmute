@@ -17,7 +17,7 @@ use crate::connections::port::{
 
 fn main() {
     //get config
-    let config = Config::new("1lt_jackmute", "v0.2.0", get_config_file_path());
+    let config = Config::new("1lt_jackmute", env!("CARGO_PKG_VERSION"), get_config_file_path());
 
     let mut connections = get_connections(&config);
     let mut muteable_connections = get_muteable_connections(&config, &connections);

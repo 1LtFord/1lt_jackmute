@@ -1,10 +1,10 @@
 [package]
 name = "jackmute_1lt"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-jack = "0.9.0"
-config_1lt = { git = "https://gitlab.com/1LtSoftware/1lt_config.git" }
+jack = "0.10.0"
+config_1lt = { git = "https://github.com/1LtFord/1lt_config.git" }
