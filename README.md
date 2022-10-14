@@ -2,6 +2,7 @@
 # 1lt_jackmute
 1Lt_Jackmute is a JACK client which enables you to toggle and switch JACK connections via shortcuts.  
 I developed this application for my live streaming audio setup, to be able to mute my microphone and system audio via my keyboard whenever i need and to redirect my microphone to different ports for preset voice manipulation.  
+![Screenshot_20221015_003857](https://user-images.githubusercontent.com/2715819/195953941-9df133e0-c18c-4bd9-8edb-8f402d648393.png)
   
 ## How to build this software
 1. Download the source code
@@ -112,3 +113,4 @@ If the alternative connection you entered the shortcut for is already active, th
   
 ## Full example configuration
 You can find a full example config I actively use on my system [here](https://github.com/1LtFord/1lt_jackmute/blob/main/config)
+
