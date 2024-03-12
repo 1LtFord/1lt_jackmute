@@ -2,9 +2,7 @@ use config_1lt::data::{
     config_file::ConfigFile,
     config_group::ConfigGroup,
 };
-use config_1lt::file::{
-    read::read_config_file,
-};
+use config_1lt::file::read::read_config_file;
 
 pub trait New {
     fn new(cfg_group: ConfigGroup) -> Self;

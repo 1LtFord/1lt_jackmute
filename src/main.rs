@@ -3,6 +3,12 @@ mod config;
 
 use std::env;
 use std::io;
+use std::io::{prelude::*, BufReader, BufWriter};
+use std::sync::mpsc;
+use std::sync::mpsc::{Sender, Receiver};
+use std::thread;
+use std::net::{TcpListener, TcpStream};
+
 use crate::config::config::Config;
 use crate::connections::{
     port_connection::PortConnection, 
@@ -19,6 +25,36 @@ fn main() {
     //get config
     let config = Config::new("1lt_jackmute", env!("CARGO_PKG_VERSION"), get_config_file_path());
 
+    let mut args: Vec<_> = env::args().collect();
+    let args = args.split_off(1);
+    if args.len() >= 1 {
+        client(config, args);
+    }
+    else {
+        server(config);
+    }
+}
+
+fn client(_config: Config, args: Vec<String>) {
+    let mut stream = BufWriter::new(match TcpStream::connect("127.0.0.1:19957") {
+        Ok(stream) => stream, 
+        Err(error) => panic!("network error {}", error)}
+    );
+
+    for arg in args {
+        
+        match stream.write(arg.as_bytes()) {
+            Ok(_) => (),
+            Err(error) => panic!("network error {}", error)
+        };
+        match stream.flush() {
+            Ok(()) => (),
+            Err(error) => panic!("network error {}", error)
+        }
+    }
+}
+
+fn server(config: Config) {
     let mut connections = get_connections(&config);
     let mut muteable_connections = get_muteable_connections(&config, &connections);
     let mut switchable_connections = get_switchable_connections(&config, &connections);
@@ -30,6 +66,12 @@ fn main() {
     //connect all connections which should be connected on startup
     error_messages.append(&mut init_connections(&mut connections, active_client.as_client()));
 
+    let (tx, rx): (Sender<String>, Receiver<String>) = mpsc::channel();
+    let txt = tx.clone();
+    let txn = tx.clone();
+    thread::spawn(move || terminal_input(txt));
+    thread::spawn(move || network_input(txn));
+
 
     let mut run = true;
     #[allow(while_true)]
@@ -40,13 +82,15 @@ fn main() {
         error_messages.clear();
 
         //wait for user input
-        let mut user_input = String::new();
-        io::stdin().read_line(&mut user_input).ok();
+        let user_input = match rx.recv() {
+            Ok(message) => message,
+            Err(error) => panic!("inter process communication error: {}", error)
+        };
 
         //clear terminal
         print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
         
-        if user_input.len() == 2 {
+        if user_input.len() <= 2 && user_input.len() >= 1 {
             
             //exit program
             if user_input.contains('e') {
@@ -69,6 +113,43 @@ fn main() {
     
 
     active_client.deactivate().unwrap();
+}
+
+fn terminal_input(txt: Sender<String>) {
+    let mut user_input = String::new();
+    io::stdin().read_line(&mut user_input).ok();
+    match txt.send(user_input) {
+        Ok(()) => (),
+        Err(error) => panic!("inter process communication error: {}", error)
+    };
+    thread::spawn(move || terminal_input(txt));
+}
+
+fn network_input(txn: Sender<String>) {
+    let listener = match TcpListener::bind("127.0.0.1:19957") {
+        Ok(listener) => listener,
+        Err(error) => panic!("communication error: {}", error)
+    };
+    for stream in listener.incoming() {
+        let mut stream = match stream {
+            Ok(stream) => stream,
+            Err(error) => panic!("communication error: {}", error)
+        };
+        let buf_reader = BufReader::new(&mut stream);
+        let command = buf_reader.lines().next();
+        match command {
+            Some(command) => 
+            match command {
+                Ok(command) => 
+                match txn.send(command) {
+                    Ok(()) => (),
+                    Err(error) => panic!("communication error: {}", error)
+                },
+                Err(error) => panic!("communication error: {}", error)
+            }
+            None => ()
+        };
+    }
 }
 
 fn get_jack_client(config: &Config) -> jack::AsyncClient<Notifications, jack::ClosureProcessHandler<impl FnMut(&jack::Client, &jack::ProcessScope)-> jack::Control>> {
