@@ -7,7 +7,7 @@ use std::io::{prelude::*, BufReader, BufWriter};
 use std::sync::mpsc;
 use std::sync::mpsc::{Sender, Receiver};
 use std::thread;
-use std::net::{TcpListener, TcpStream};
+use std::os::unix::net::{UnixListener, UnixStream};
 
 use crate::config::config::Config;
 use crate::connections::{
@@ -36,13 +36,14 @@ fn main() {
 }
 
 fn client(_config: Config, args: Vec<String>) {
-    let mut stream = BufWriter::new(match TcpStream::connect("127.0.0.1:19957") {
+    let mut path = env::temp_dir();
+    path.push("1lt_jackmute.sock");
+    let mut stream = BufWriter::new(match UnixStream::connect(path) {
         Ok(stream) => stream, 
         Err(error) => panic!("network error {}", error)}
     );
 
     for arg in args {
-        
         match stream.write(arg.as_bytes()) {
             Ok(_) => (),
             Err(error) => panic!("network error {}", error)
@@ -70,7 +71,7 @@ fn server(config: Config) {
     let txt = tx.clone();
     let txn = tx.clone();
     thread::spawn(move || terminal_input(txt));
-    thread::spawn(move || network_input(txn));
+    thread::spawn(move || unix_socket_input(txn));
 
 
     let mut run = true;
@@ -125,30 +126,39 @@ fn terminal_input(txt: Sender<String>) {
     thread::spawn(move || terminal_input(txt));
 }
 
-fn network_input(txn: Sender<String>) {
-    let listener = match TcpListener::bind("127.0.0.1:19957") {
+fn unix_socket_input(txn: Sender<String>) {
+    let mut path = env::temp_dir();
+    path.push("1lt_jackmute.sock");
+    if path.exists() {
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    let listener = match UnixListener::bind(&path) {
         Ok(listener) => listener,
-        Err(error) => panic!("communication error: {}", error)
+        Err(error) => panic!("could not create unix socket at {} | {}", &path.display(), error)
     };
+
     for stream in listener.incoming() {
-        let mut stream = match stream {
-            Ok(stream) => stream,
-            Err(error) => panic!("communication error: {}", error)
-        };
-        let buf_reader = BufReader::new(&mut stream);
-        let command = buf_reader.lines().next();
-        match command {
-            Some(command) => 
-            match command {
-                Ok(command) => 
-                match txn.send(command) {
-                    Ok(()) => (),
-                    Err(error) => panic!("communication error: {}", error)
-                },
+        match stream {
+            Ok(stream) => match txn.send(get_command_from_unix_stream(stream)) {
+                Ok(()) => (),
                 Err(error) => panic!("communication error: {}", error)
-            }
-            None => ()
+            },
+            Err(error) => panic!("error while reading from unix socket: {}", error)
         };
+    }
+}
+
+fn get_command_from_unix_stream(mut stream: UnixStream) -> String {
+    let buf_reader = BufReader::new(&mut stream);
+    let command = buf_reader.lines().next();
+    match command {
+        Some(command) => 
+        match command {
+            Ok(command) => command,
+            Err(error) => panic!("communication error: {}", error)
+        }
+        None => "".to_string()
     }
 }
 
